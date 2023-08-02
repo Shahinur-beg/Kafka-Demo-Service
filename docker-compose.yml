@@ -1,0 +1,140 @@
+version: '3.7'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    hostname: zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    networks:
+      - kafka-demo
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    restart: "no"
+    hostname: kafka
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - kafka_logs:/var/lib/kafka/logs
+    networks:
+      - kafka-demo
+
+  kafdrop:
+    depends_on:
+      - kafka
+    restart: "no"
+    image: obsidiandynamics/kafdrop
+    container_name: kafdrop-demo
+    volumes:
+      - kafdrop_data:/var/lib/kafdrop/data
+      - kafdrop_logs:/var/lib/kafdrop/logs
+    ports:
+      - "9000:9000"
+    environment:
+      - KAFKA_BROKERCONNECT=kafka:29092
+    networks:
+      - kafka-demo
+
+  redis:
+    image: redis
+    container_name: redis-db
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/var/lib/redis/data
+      - redis-logs:/var/lib/redis/log
+    command: redis-server --appendonly yes
+    environment:
+      - REDIS_PASSWORD=password
+      - REDIS_DATABASES=16
+    networks:
+      - kafka-demo
+    restart: on-failure
+
+  kafka-producer:
+    depends_on:
+      - kafka
+    image: amazoncorretto:17
+    container_name: kafka-producer-demo
+    volumes:
+      - "./Kafka Producer:/app"
+      - kafka_producer:/var/lib/producer/data
+      - producer_logs:/var/lib/producer/logs
+    working_dir: /app
+    environment:
+      - spring.profiles.active=dev
+      - spring.kafka.bootstrap-servers=kafka:29092
+    command: java -jar /app/target/kafka-producer.jar
+    ports:
+      - "8090:8090"
+    networks:
+      - kafka-demo
+    restart: on-failure
+
+  kafka-consumer:
+    depends_on:
+      - kafka
+      - redis
+    image: amazoncorretto:17
+    container_name: kafka-consumer-demo
+    volumes:
+      - "./Kafka Consumer:/app"
+      - kafka_consumer:/var/lib/consumer/data
+      - consumer_logs:/var/lib/consumer/logs
+    working_dir: /app
+    environment:
+      - spring.profiles.active=dev
+      - spring.kafka.bootstrap-servers=kafka:29092
+      - redis.host=localhost
+      - redis.port=6379
+      - redis.password=password
+      - redis.database.index=8
+    command: java -jar /app/target/kafka-consumer.jar
+    ports:
+      - "8086:8086"
+    networks:
+      - kafka-demo
+    restart: on-failure
+
+networks:
+  kafka-demo:
+    driver: bridge
+
+volumes:
+  zookeeper_data :
+  zookeeper_logs :
+  kafka_data :
+  kafka_logs:
+  kafka_producer:
+  producer_logs:
+  kafka_consumer:
+  consumer_logs:
+  kafdrop_data:
+  kafdrop_logs:
+  redis-data:
+  redis-logs:
+
+
